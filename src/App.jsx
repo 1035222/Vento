@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Wind, Map as MapIcon } from "lucide-react";
 import { useWeather } from "./hooks/useWeather";
@@ -23,13 +23,12 @@ import ShareButton from "./components/ShareButton";
 import DayInsight from "./components/DayInsight";
 
 function App() {
+  // Todos los hooks se llaman siempre, sin importar ningún estado — nunca antes de un return condicional
   const { location, weather, loading, error, setCity, useMyLocation } = useWeather("Medellin");
   const [unit, setUnit] = useState("C");
   const [showMap, setShowMap] = useState(false);
   const [scrubIndex, setScrubIndex] = useState(0);
   const shareCardRef = useRef(null);
-
-  if (error) return <p style={{ padding: "2rem", color: "white" }}>Error: {error}</p>;
 
   const next24 = useMemo(() => {
     if (!weather) return null;
@@ -47,15 +46,32 @@ function App() {
     };
   }, [weather]);
 
-  useMemo(() => setScrubIndex(0), [location?.name]);
+  // Reinicia el scrubber al cambiar de ciudad — con useEffect, no con useMemo (evita side-effects durante el render)
+  useEffect(() => {
+    setScrubIndex(0);
+  }, [location?.name]);
 
   const isNow = scrubIndex === 0;
-  const displayCode = !loading && weather && next24 ? (isNow ? weather.current.weather_code : next24.code[scrubIndex]) : 0;
-  const displayIsDay = !loading && weather && next24 ? (isNow ? weather.current.is_day === 1 : next24.isDay[scrubIndex] === 1) : true;
-  const state = !loading && weather && next24 ? getWeatherState(displayCode, displayIsDay) : "clear-day";
+  const displayCode = weather && next24 ? (isNow ? weather.current.weather_code : next24.code[scrubIndex]) : 0;
+  const displayIsDay = weather && next24 ? (isNow ? weather.current.is_day === 1 : next24.isDay[scrubIndex] === 1) : true;
+  const state = weather && next24 ? getWeatherState(displayCode, displayIsDay) : "clear-day";
 
   const { enabled: soundEnabled, toggle: toggleSound } = useAmbientSound(state);
   const { permission, alertsEnabled, toggleAlerts } = useRainAlert(weather?.hourly, location?.name);
+
+  // A partir de aquí sí es seguro cortar la ejecución — ya se llamaron todos los hooks arriba, siempre en el mismo orden
+  if (error) {
+    return (
+      <WeatherBackground state="clear-day">
+        <div style={{ padding: "2rem", color: "white", textAlign: "center" }}>
+          <p>No se pudo cargar el clima: {error}</p>
+          <p style={{ opacity: 0.7, fontSize: "0.9rem", marginTop: "0.5rem" }}>
+            Puede ser un límite temporal del servicio. Intenta buscar de nuevo en unos segundos.
+          </p>
+        </div>
+      </WeatherBackground>
+    );
+  }
 
   if (loading || !weather || !next24) {
     return (
